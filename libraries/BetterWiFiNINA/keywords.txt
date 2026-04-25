@@ -1,0 +1,84 @@
+#######################################
+# Syntax Coloring Map For BetterWiFiNINA
+#######################################
+
+#######################################
+# Library (KEYWORD1)
+#######################################
+
+WiFi	KEYWORD1
+WiFiNINA	KEYWORD1
+WiFiUdp	KEYWORD1
+WiFiBearSSLSocket	KEYWORD1
+WiFiClient	KEYWORD1
+WiFiSSLClient	KEYWORD1
+WiFiServer	KEYWORD1
+WiFiSocket	KEYWORD1
+WiFiUDP	KEYWORD1
+
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+firmwareVersion	KEYWORD2
+status	KEYWORD2
+reasonCode	KEYWORD2
+connect	KEYWORD2
+write	KEYWORD2
+available	KEYWORD2
+config	KEYWORD2
+setDNS	KEYWORD2
+read	KEYWORD2
+flush	KEYWORD2
+stop	KEYWORD2
+connected	KEYWORD2
+begin	KEYWORD2
+disconnect	KEYWORD2
+macAddress	KEYWORD2
+localIP	KEYWORD2
+subnetMask	KEYWORD2
+gatewayIP	KEYWORD2
+SSID	KEYWORD2
+BSSID		KEYWORD2
+RSSI	KEYWORD2
+encryptionType	KEYWORD2
+beginPacket	KEYWORD2
+endPacket	KEYWORD2
+parsePacket	KEYWORD2
+remoteIP	KEYWORD2
+remotePort	KEYWORD2
+
+beginAP	KEYWORD2
+beginEnterprise	KEYWORD2
+setHostname	KEYWORD2
+end	KEYWORD2
+getTime	KEYWORD2
+lowPowerMode	KEYWORD2
+noLowPowerMode	KEYWORD2
+ping	KEYWORD2
+beginMulticast	KEYWORD2
+setTimeout	KEYWORD2
+
+lastError	KEYWORD2
+close	KEYWORD2
+bind	 KEYWORD2
+listen	KEYWORD2
+accept	KEYWORD2
+send	KEYWORD2
+recv	KEYWORD2
+sendTo	KEYWORD2
+recvFrom	KEYWORD2
+setNonBlocking	KEYWORD2
+availableToRead	KEYWORD2
+poll	KEYWORD2
+setOption	KEYWORD2
+getOption	KEYWORD2
+getPeerName	KEYWORD2
+
+
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
