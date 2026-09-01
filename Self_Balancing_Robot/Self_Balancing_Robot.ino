@@ -169,7 +169,7 @@ void processData(String s) {
   else if (s.startsWith("i") || s.startsWith("I")) I = s.substring(1).toFloat();
   else if (s.startsWith("d") || s.startsWith("D")) D = s.substring(1).toFloat();
   else if (s.startsWith("t") || s.startsWith("T")) Setpoint = s.substring(1).toFloat();
-  else if (s.startsWith("f") || s.startsWith("F")) Setpoint = 2.9;
+  else if (s.startsWith("f") || s.startsWith("F")) Setpoint = 2.8;
   else if (s.startsWith("b") || s.startsWith("B")) Setpoint = -1.0;
   else if (s.startsWith("s") || s.startsWith("S")) Setpoint = 1;
 
