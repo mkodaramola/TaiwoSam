@@ -14,8 +14,8 @@
 // WiFi / Firebase
 // =====================================================
 
-#define WIFI_SSID       "Premauda_STARLINK2"
-#define WIFI_PASSWORD   "Technologies"
+#define WIFI_SSID       "Habeeb"
+#define WIFI_PASSWORD   "Habeeb1234"
 
 #define FIREBASE_HOST   "https://medshield-b9140-default-rtdb.firebaseio.com"
 
