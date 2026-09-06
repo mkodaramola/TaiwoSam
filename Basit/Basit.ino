@@ -365,6 +365,8 @@ void updateRTC()
   Serial.println("RTC Updated!");
 }
 
+day,hr,mins,sec
+
 
 // ============================================================
 // UPDATE LCD
@@ -437,8 +439,7 @@ void setup()
   // LCD
   // ----------------------------------------------------------
 
-  lcd.begin();
-
+  lcd.begin(16, 2);
   lcd.backlight();
 
   lcd.clear();
