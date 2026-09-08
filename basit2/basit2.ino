@@ -14,21 +14,25 @@
    CLEAR
    GET
 
+   Manual stepper jog commands:
+
+   <n   -> rotate LEFT  by n steps
+   >n   -> rotate RIGHT by n steps
+
+   Set RTC date/time:
+
+   TIME,year,month,day,hour,minute,second
+   TIME,2026,9,8,14,30,0
+
    ESP32 responses:
 
    OK,1
    OK,3
    OK,CLEAR
+   OK,LEFT
+   OK,RIGHT
+   OK,TIME
    SCHEDULES,3,0,15,30,5,2,9,25,16,5,5,20,10,0
-
-   ERROR,INVALID_COMMAND
-   ERROR,INVALID_DATA
-   ERROR,MAX_10
-   ERROR,INCOMPLETE_SCHEDULE
-   ERROR,INVALID_DAY
-   ERROR,INVALID_HOUR
-   ERROR,INVALID_MINUTE
-   ERROR,INVALID_SECOND
 
    Day:
    0 = Sunday
@@ -101,6 +105,35 @@
 #define LCD_ROWS    2
 
 LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLUMNS, LCD_ROWS);
+
+
+// ============================================================
+// LCD CUSTOM CHARACTERS
+// ============================================================
+
+// Custom character slot used for the Bluetooth icon
+// (lcd.createChar only supports slots 0-7 on the HD44780)
+
+#define BLUETOOTH_ICON_SLOT 0
+
+// Bluetooth glyph, 5x8 pixels, for lcd.createChar()
+
+byte bluetoothIcon[8] =
+{
+  0b00100,
+  0b10110,
+  0b01101,
+  0b00100,
+  0b01101,
+  0b10110,
+  0b00100,
+  0b00000
+};
+
+// Column/row used to show the Bluetooth icon on the LCD
+
+#define BLUETOOTH_ICON_COL 15
+#define BLUETOOTH_ICON_ROW 0
 
 
 // ============================================================
@@ -249,6 +282,10 @@ void processBluetoothCommand(String command);
 
 bool processSetCommand(String command);
 
+bool processMoveCommand(String command);
+
+bool processTimeCommand(String command);
+
 bool validateSchedule(PillSchedule schedule);
 
 void saveSchedules();
@@ -279,6 +316,12 @@ void dispensePill();
 void rotatePill();
 
 void rotateOver();
+
+void moveStepperSteps(long steps);
+
+void rotateLeft(long steps);
+
+void rotateRight(long steps);
 
 void printSchedulesToSerial();
 
@@ -496,6 +539,25 @@ void updateLCD()
 
   lcd.setCursor(5, 0);
   lcd.print(rtcTime.toString(timeBuffer));
+
+
+  // ----------------------------------------------------------
+  // Bluetooth connection icon
+  //
+  // Show the custom Bluetooth glyph only while a client is
+  // connected. When no client is connected, blank the spot.
+  // ----------------------------------------------------------
+
+  lcd.setCursor(BLUETOOTH_ICON_COL, BLUETOOTH_ICON_ROW);
+
+  if (SerialBT.hasClient())
+  {
+    lcd.write(byte(BLUETOOTH_ICON_SLOT));
+  }
+  else
+  {
+    lcd.print(" ");
+  }
 
 
   lcd.setCursor(0, 1);
@@ -729,9 +791,6 @@ void processBluetooth()
 
         if (bluetoothBuffer.length() > 0)
         {
-          Serial.print("Bluetooth RX: ");
-          Serial.println(bluetoothBuffer);
-
           processBluetoothCommand(
             bluetoothBuffer
           );
@@ -749,6 +808,63 @@ void processBluetooth()
     // --------------------------------------------------------
 
     bluetoothBuffer += incomingChar;
+
+
+    // --------------------------------------------------------
+    // Implicit command boundary for jog commands
+    //
+    // Some Bluetooth apps (e.g. certain MIT App Inventor
+    // projects) send "<n" / ">n" jog commands back-to-back
+    // with no delimiter between them, so the ESP32's receive
+    // buffer would otherwise end up as one long unparseable
+    // string like "<10<10>5CLEAR".
+    //
+    // A jog command's digits only ever end when a
+    // non-digit character shows up next, so that next
+    // character (another '<'/'>' or the first letter of a
+    // keyword command) is treated as the start of a brand
+    // new command, and whatever was buffered before it is
+    // processed immediately.
+    // --------------------------------------------------------
+
+    if (bluetoothBuffer.length() > 1)
+    {
+      char firstChar =
+        bluetoothBuffer.charAt(0);
+
+      if (firstChar == '<' ||
+          firstChar == '>')
+      {
+        char lastChar =
+          bluetoothBuffer.charAt(
+            bluetoothBuffer.length() - 1
+          );
+
+        if (!isDigit(lastChar))
+        {
+          String previousCommand =
+            bluetoothBuffer.substring(
+              0,
+              bluetoothBuffer.length() - 1
+            );
+
+          previousCommand.trim();
+
+          if (previousCommand.length() > 0)
+          {
+            processBluetoothCommand(
+              previousCommand
+            );
+          }
+
+          // Keep the character that triggered the split -
+          // it's the start of the next command
+
+          bluetoothBuffer =
+            String(lastChar);
+        }
+      }
+    }
 
 
     // --------------------------------------------------------
@@ -775,9 +891,6 @@ void processBluetooth()
 
       if (bluetoothBuffer.length() > 0)
       {
-        Serial.print("Bluetooth RX: ");
-        Serial.println(bluetoothBuffer);
-
         processBluetoothCommand(
           bluetoothBuffer
         );
@@ -850,6 +963,34 @@ void processBluetoothCommand(String command)
   if (command == "GET")
   {
     sendSchedules();
+
+    return;
+  }
+
+
+  // ----------------------------------------------------------
+  // MANUAL STEPPER JOG
+  //
+  // "<n" rotates LEFT  by n steps
+  // ">n" rotates RIGHT by n steps
+  // ----------------------------------------------------------
+
+  if (command.startsWith("<") ||
+      command.startsWith(">"))
+  {
+    processMoveCommand(command);
+
+    return;
+  }
+
+
+  // ----------------------------------------------------------
+  // TIME
+  // ----------------------------------------------------------
+
+  if (command.startsWith("TIME,"))
+  {
+    processTimeCommand(command);
 
     return;
   }
@@ -1107,6 +1248,23 @@ bool processSetCommand(String command)
   lastTriggeredSchedule = -1;
 
 
+  // ----------------------------------------------------------
+  // Briefly show a "Schedule Received" message on the LCD
+  // ----------------------------------------------------------
+
+  lcd.clear();
+
+  lcd.setCursor(0, 0);
+  lcd.print("Schedule");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Received!");
+
+  delay(2000);
+
+  lcd.clear();
+
+
   // Send confirmation
 
   sendBluetoothOK(
@@ -1117,6 +1275,344 @@ bool processSetCommand(String command)
   // Print to USB Serial
 
   printSchedulesToSerial();
+
+
+  return true;
+}
+
+
+// ============================================================
+// PROCESS MANUAL STEPPER MOVE COMMAND
+// ============================================================
+
+bool processMoveCommand(String command)
+{
+  /*
+     Expected:
+
+     <n   -> rotate LEFT  by n steps
+     >n   -> rotate RIGHT by n steps
+  */
+
+  char directionChar =
+    command.charAt(0);
+
+
+  String numberPart =
+    command.substring(1);
+
+  numberPart.trim();
+
+
+  // ----------------------------------------------------------
+  // Must have a number after the direction character
+  // ----------------------------------------------------------
+
+  if (numberPart.length() == 0)
+  {
+    sendBluetoothError(
+      "INVALID_DATA"
+    );
+
+    return false;
+  }
+
+
+  // ----------------------------------------------------------
+  // Make sure the number is actually numeric
+  // ----------------------------------------------------------
+
+  for (unsigned int i = 0;
+       i < numberPart.length();
+       i++)
+  {
+    char c = numberPart.charAt(i);
+
+
+    if (!isDigit(c))
+    {
+      sendBluetoothError(
+        "INVALID_DATA"
+      );
+
+      return false;
+    }
+  }
+
+
+  long steps =
+    numberPart.toInt();
+
+
+  if (steps <= 0)
+  {
+    sendBluetoothError(
+      "INVALID_STEPS"
+    );
+
+    return false;
+  }
+
+
+  // ----------------------------------------------------------
+  // Perform the move
+  // ----------------------------------------------------------
+
+  if (directionChar == '<')
+  {
+    rotateLeft(steps);
+
+    sendBluetoothOK("LEFT");
+  }
+  else
+  {
+    rotateRight(steps);
+
+    sendBluetoothOK("RIGHT");
+  }
+
+
+  return true;
+}
+
+
+// ============================================================
+// PROCESS RTC TIME-SET COMMAND
+// ============================================================
+
+bool processTimeCommand(String command)
+{
+  /*
+     Expected:
+
+     TIME,year,month,day,hour,minute,second
+
+     Example:
+
+     TIME,2026,9,8,14,30,0
+  */
+
+
+  // ----------------------------------------------------------
+  // Remove "TIME,"
+  // ----------------------------------------------------------
+
+  command.remove(0, 5);
+
+
+  // ----------------------------------------------------------
+  // Parse the 6 comma-separated values
+  // ----------------------------------------------------------
+
+  int values[6];
+
+  int valueCount = 0;
+
+  int startIndex = 0;
+
+
+  while (startIndex < command.length())
+  {
+    int commaIndex =
+      command.indexOf(',', startIndex);
+
+
+    String valueString;
+
+
+    if (commaIndex == -1)
+    {
+      valueString =
+        command.substring(startIndex);
+
+      startIndex = command.length();
+    }
+    else
+    {
+      valueString =
+        command.substring(
+          startIndex,
+          commaIndex
+        );
+
+      startIndex =
+        commaIndex + 1;
+    }
+
+
+    valueString.trim();
+
+
+    if (valueString.length() == 0)
+    {
+      sendBluetoothError(
+        "INVALID_DATA"
+      );
+
+      return false;
+    }
+
+
+    // Check maximum values
+
+    if (valueCount >= 6)
+    {
+      sendBluetoothError(
+        "INVALID_TIME"
+      );
+
+      return false;
+    }
+
+
+    // Make sure the value is actually numeric
+
+    for (unsigned int i = 0;
+         i < valueString.length();
+         i++)
+    {
+      char c = valueString.charAt(i);
+
+
+      if (!isDigit(c))
+      {
+        sendBluetoothError(
+          "INVALID_DATA"
+        );
+
+        return false;
+      }
+    }
+
+
+    values[valueCount] =
+      valueString.toInt();
+
+
+    valueCount++;
+  }
+
+
+  // ----------------------------------------------------------
+  // Must have exactly 6 values
+  // ----------------------------------------------------------
+
+  if (valueCount != 6)
+  {
+    sendBluetoothError(
+      "INVALID_TIME"
+    );
+
+    return false;
+  }
+
+
+  int year   = values[0];
+  int month  = values[1];
+  int day    = values[2];
+  int hour   = values[3];
+  int minute = values[4];
+  int second = values[5];
+
+
+  // ----------------------------------------------------------
+  // Validate ranges
+  // ----------------------------------------------------------
+
+  if (year < 2000 || year > 9999)
+  {
+    sendBluetoothError("INVALID_YEAR");
+
+    return false;
+  }
+
+  if (month < 1 || month > 12)
+  {
+    sendBluetoothError("INVALID_MONTH");
+
+    return false;
+  }
+
+  if (day < 1 || day > 31)
+  {
+    sendBluetoothError("INVALID_DAY");
+
+    return false;
+  }
+
+  if (hour > 23)
+  {
+    sendBluetoothError("INVALID_HOUR");
+
+    return false;
+  }
+
+  if (minute > 59)
+  {
+    sendBluetoothError("INVALID_MINUTE");
+
+    return false;
+  }
+
+  if (second > 59)
+  {
+    sendBluetoothError("INVALID_SECOND");
+
+    return false;
+  }
+
+
+  // ----------------------------------------------------------
+  // Build and validate the DateTime
+  // ----------------------------------------------------------
+
+  DateTime newDateTime(
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second
+  );
+
+
+  if (!newDateTime.isValid())
+  {
+    sendBluetoothError(
+      "INVALID_TIME"
+    );
+
+    return false;
+  }
+
+
+  // ----------------------------------------------------------
+  // Update the RTC
+  // ----------------------------------------------------------
+
+  rtc.adjust(newDateTime);
+
+
+  Serial.println(
+    "RTC updated via Bluetooth."
+  );
+
+
+  sendBluetoothOK("TIME");
+
+
+  // ----------------------------------------------------------
+  // Briefly confirm on the LCD
+  // ----------------------------------------------------------
+
+  lcd.clear();
+
+  lcd.setCursor(0, 0);
+  lcd.print("RTC Updated");
+
+  delay(1000);
+
+  lcd.clear();
 
 
   return true;
@@ -1599,6 +2095,54 @@ void rotateOver()
 
 
 // ============================================================
+// MANUAL STEPPER JOG (LEFT / RIGHT BY N STEPS)
+// ============================================================
+
+// Moves the stepper by a signed number of steps relative to
+// its current position. Positive values move RIGHT,
+// negative values move LEFT.
+
+void moveStepperSteps(long steps)
+{
+  stepper.enableOutputs();
+
+  stepper.setCurrentPosition(0);
+
+  int direction =
+    (steps >= 0) ? 1 : -1;
+
+
+  while (
+    stepper.currentPosition() != steps
+  )
+  {
+    stepper.setSpeed(500 * direction);
+
+    stepper.runSpeed();
+  }
+
+
+  stepper.disableOutputs();
+}
+
+
+// Rotate the stepper LEFT by the given number of steps
+
+void rotateLeft(long steps)
+{
+  moveStepperSteps(-steps);
+}
+
+
+// Rotate the stepper RIGHT by the given number of steps
+
+void rotateRight(long steps)
+{
+  moveStepperSteps(steps);
+}
+
+
+// ============================================================
 // SETUP
 // ============================================================
 
@@ -1685,6 +2229,14 @@ void setup()
   );
 
   lcd.backlight();
+
+  // Register the Bluetooth icon in the LCD's custom
+  // character memory (slot 0)
+
+  lcd.createChar(
+    BLUETOOTH_ICON_SLOT,
+    bluetoothIcon
+  );
 
   lcd.clear();
 
@@ -1825,6 +2377,18 @@ void setup()
 
   Serial.println(
     "CLEAR"
+  );
+
+  Serial.println(
+    "<n  (jog left n steps)"
+  );
+
+  Serial.println(
+    ">n  (jog right n steps)"
+  );
+
+  Serial.println(
+    "TIME,year,month,day,hour,min,sec"
   );
 
   Serial.println();
